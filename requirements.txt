@@ -1,0 +1,5 @@
+python-telegram-bot==3.11
+requests==2.32.3
+flask==3.0.3
+sqlalchemy==2.0.30
+python-dotenv==1.0.1
