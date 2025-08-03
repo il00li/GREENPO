@@ -1127,4 +1127,3 @@ if __name__ == '__main__':
     else:
         print("❌ هذا البوت مخصص للعمل على Render.com فقط")
         print("❌ يرجى نشر البوت على Render.com لاستخدامه") 
-``'
