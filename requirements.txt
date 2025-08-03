@@ -1,5 +1,4 @@
-python-telegram-bot==21.1.1
-requests==2.32.3
-flask==3.0.3
-sqlalchemy==2.0.30
-python-dotenv==1.0.1
+python-telegram-bot==20.7
+requests==2.32.4
+flask==3.1.1
+gunicorn==23.0.0
