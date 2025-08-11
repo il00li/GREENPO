@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = '8110119856:AAFe3EnW8vFAzb_mE_zduxfmSjdC9Gwu-D8'
-ICONFINDER_API_KEY = '7K3SAYeDJcF2F70s1Ue6hAvobN0mZ485PY81X11JktLihGgipDUFudsKahNiyH16'
+ICONFINDER_API_KEY = 'X0vjEUN6KRlxbp2DoUkyHeM0VOmxY91rA6BbU5j3Xu6wDodwS0McmilLPBWDUcJ1'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 7251748706  # معرف المدير
 WEBHOOK_URL = 'https://greenpo.onrender.com/webhook'  # تحديث رابط الويب هووك
@@ -300,11 +300,16 @@ def search_iconfinder(query, content_type):
         'Accept': 'application/json'
     }
     
-    # إضافة كلمات للاستعلام حسب النوع
-    if content_type == "3d":
-        query = "3d " + query
+    # تعيين النمط (style) حسب نوع المحتوى
+    style = None
+    if content_type == "icons":
+        style = "glyph"
+    elif content_type == "illustrations":
+        style = "illustration"
+    elif content_type == "3d":
+        style = "3d"
     elif content_type == "stickers":
-        query = "sticker " + query
+        style = "sticker"
     
     params = {
         'query': query,
@@ -312,6 +317,10 @@ def search_iconfinder(query, content_type):
         'premium': 'false',
         'license': 'free'
     }
+    
+    # إضافة النمط إذا كان محددًا
+    if style:
+        params['style'] = style
     
     try:
         logger.info(f"البحث في Iconfinder عن: {query} ({content_type})")
@@ -634,4 +643,4 @@ def return_to_main(call):
 if __name__ == '__main__':
     logger.info("بدء تشغيل البوت...")
     set_webhook()
-    app.run(host='0.0.0.0', port=10000)
+    app.run(host='0.0.0.0', port=10000) 
