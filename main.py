@@ -17,6 +17,7 @@ TOKEN = '8110119856:AAFe3EnW8vFAzb_mE_zduxfmSjdC9Gwu-D8'
 ICONFINDER_API_KEY = 'X0vjEUN6KRlxbp2DoUkyHeM0VOmxY91rA6BbU5j3Xu6wDodwS0McmilLPBWDUcJ1'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 7251748706  # معرف المدير
+CHANNEL_ID = '@AWU87'  # القناة لإرسال المحتوى المحمل
 WEBHOOK_URL = 'https://greenpo.onrender.com/webhook'  # تحديث رابط الويب هووك
 
 app = Flask(__name__)
@@ -113,6 +114,7 @@ def show_main_menu(chat_id, user_id):
     
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🔍 بدء البحث", callback_data="search"))
+    markup.add(InlineKeyboardButton("👤 عن المطور", callback_data="about_dev"))
     
     welcome_msg = "ICONFINDBOT\nابحث عن أيقونات ورسومات"
     
@@ -172,13 +174,12 @@ def show_content_types(call):
     except:
         pass
     
-    markup = InlineKeyboardMarkup(row_width=2)
-    # أنواع المحتوى المطلوبة
+    markup = InlineKeyboardMarkup(row_width=1)
+    # إضافة خيارات البحث كما في الصورة المرفقة
     markup.add(
-        InlineKeyboardButton("🎬 فيديوهات", callback_data="type_videos"),
-        InlineKeyboardButton("🖼️ صور", callback_data="type_photos"),
-        InlineKeyboardButton("🖼️ أيقونات", callback_data="type_icons"),
-        InlineKeyboardButton("🎨 رسوم توضيحية", callback_data="type_blush_illustrations")
+        InlineKeyboardButton("🎨 رسوم توضيحية", callback_data="type_blush_illustrations"),
+        InlineKeyboardButton("📹 فيديوهات", callback_data="type_videos"),
+        InlineKeyboardButton("🖼️ أيقونات", callback_data="type_icons")
     )
     # إضافة زر الرجوع للقائمة الرئيسية
     markup.add(InlineKeyboardButton("🏠 رجوع للقائمة الرئيسية", callback_data="back_to_main"))
@@ -260,20 +261,13 @@ def process_search_term(message, user_id):
     # تحديد مصدر البحث بناءً على النوع
     if content_type == "videos":
         # البحث في Pixabay للفيديوهات
-        results = search_pixabay_videos(search_term)
-        source = "pixabay_video"
-    elif content_type == "photos":
-        # البحث في Pixabay للصور
-        results = search_pixabay_photos(search_term)
-        source = "pixabay_photo"
+        results = search_pixabay(search_term, content_type)
     elif content_type == "blush_illustrations":
-        # البحث في Blush للرسوم التوضيحية
+        # البحث في Blush للرسوم التوضيحية الملونة
         results = search_blush(search_term)
-        source = "blush"
     else:
-        # البحث في Iconfinder للأيقونات
+        # البحث في Iconfinder لأنواع المحتوى الأخرى
         results = search_iconfinder(search_term, content_type)
-        source = "iconfinder"
     
     if not results or len(results) == 0:
         # عرض خيارات عند عدم وجود نتائج
@@ -296,17 +290,18 @@ def process_search_term(message, user_id):
     user_data[user_id]['search_term'] = search_term
     user_data[user_id]['search_results'] = results
     user_data[user_id]['current_index'] = 0
-    user_data[user_id]['source'] = source
+    user_data[user_id]['source'] = "pixabay" if content_type == "videos" else ("blush" if content_type == "blush_illustrations" else "iconfinder")
     
     # عرض النتيجة الأولى في نفس رسالة "جاري البحث"
     show_result(chat_id, user_id, message_id=user_data[user_id]['search_message_id'])
 
 def search_blush(query):
-    """البحث في Blush API للرسوم التوضيحية"""
+    """البحث في Blush API للرسوم التوضيحية الملونة"""
     base_url = "https://blush.design/api/illustrations"
     params = {
         'search': query,
-        'limit': 50
+        'limit': 50,
+        'colorful': 'true'  # تضمين الرسوم الملونة فقط
     }
     
     try:
@@ -316,11 +311,13 @@ def search_blush(query):
         data = response.json()
         logger.info(f"تم العثور على {len(data)} نتيجة")
         
-        # إرجاع فقط النتائج التي تحتوي على صور صالحة
+        # إرجاع فقط النتائج التي تحتوي على صور صالحة ومجانية
         valid_results = []
         for item in data:
             preview_url = item.get('previewURL')
             if preview_url and is_valid_url(preview_url):
+                # إضافة رابط التنزيل للمحتوى الأصلي
+                item['download_url'] = item.get('downloadURL') or preview_url
                 valid_results.append(item)
         
         logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
@@ -340,12 +337,18 @@ def search_iconfinder(query, content_type):
     style = None
     if content_type == "icons":
         style = "glyph"
+    elif content_type == "illustrations":
+        style = "illustration"
+    elif content_type == "3d":
+        style = "3d"
+    elif content_type == "stickers":
+        style = "sticker"
     
     params = {
         'query': query,
         'count': 50,
         'premium': 'false',
-        'license': 'free'
+        'license': 'free'  # تضمين المحتوى المجاني فقط
     }
     
     # إضافة النمط إذا كان محددًا
@@ -360,26 +363,29 @@ def search_iconfinder(query, content_type):
         icons = data.get('icons', [])
         logger.info(f"تم العثور على {len(icons)} نتيجة")
         
-        # إرجاع فقط النتائج التي تحتوي على صور صالحة
+        # إرجاع فقط النتائج المجانية التي تحتوي على صور صالحة
         valid_results = []
         for icon in icons:
             preview_url = get_best_icon_url(icon)
-            if preview_url and is_valid_url(preview_url):
+            if preview_url and is_valid_url(preview_url) and icon.get('is_premium', False) is False:
+                # إضافة رابط التنزيل للمحتوى الأصلي
+                icon['download_url'] = get_download_url(icon)
                 valid_results.append(icon)
         
-        logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
+        logger.info(f"عدد النتائج المجانية الصالحة: {len(valid_results)}")
         return valid_results
     except Exception as e:
         logger.error(f"خطأ في واجهة Iconfinder: {e}")
         return None
 
-def search_pixabay_videos(query):
+def search_pixabay(query, content_type):
     base_url = "https://pixabay.com/api/videos/"
     params = {
         'key': PIXABAY_API_KEY,
         'q': query,
         'per_page': 50,
-        'lang': 'en'
+        'lang': 'en',
+        'editors_choice': 'true'  # تضمين المحتوى عالي الجودة فقط
     }
     
     try:
@@ -390,46 +396,17 @@ def search_pixabay_videos(query):
         hits = data.get('hits', [])
         logger.info(f"تم العثور على {len(hits)} نتيجة")
         
-        # إرجاع فقط النتائج التي تحتوي على فيديو صالح
+        # إرجاع فقط النتائج المجانية التي تحتوي على فيديو صالح
         valid_results = []
         for hit in hits:
             if 'videos' in hit and 'medium' in hit['videos']:
                 video_url = hit['videos']['medium']['url']
-                if is_valid_url(video_url):
+                if is_valid_url(video_url) and hit.get('type', '') == 'video':
+                    # إضافة رابط التنزيل للمحتوى الأصلي
+                    hit['download_url'] = hit['videos']['large']['url'] if 'large' in hit['videos'] else video_url
                     valid_results.append(hit)
         
-        logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
-        return valid_results
-    except Exception as e:
-        logger.error(f"خطأ في واجهة Pixabay: {e}")
-        return None
-
-def search_pixabay_photos(query):
-    base_url = "https://pixabay.com/api/"
-    params = {
-        'key': PIXABAY_API_KEY,
-        'q': query,
-        'per_page': 50,
-        'image_type': 'photo',
-        'lang': 'en'
-    }
-    
-    try:
-        logger.info(f"البحث في Pixabay عن: {query} (photos)")
-        response = requests.get(base_url, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        hits = data.get('hits', [])
-        logger.info(f"تم العثور على {len(hits)} نتيجة")
-        
-        # إرجاع فقط النتائج التي تحتوي على صور صالحة
-        valid_results = []
-        for hit in hits:
-            if 'webformatURL' in hit and hit['webformatURL']:
-                if is_valid_url(hit['webformatURL']):
-                    valid_results.append(hit)
-        
-        logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
+        logger.info(f"عدد النتائج المجانية الصالحة: {len(valid_results)}")
         return valid_results
     except Exception as e:
         logger.error(f"خطأ في واجهة Pixabay: {e}")
@@ -450,6 +427,18 @@ def get_best_icon_url(icon):
         return icon['vector_sizes'][0]['formats'][0]['preview_url']
     
     # خيار أخير: استخدام الرابط الأساسي
+    return icon.get('preview_url')
+
+def get_download_url(icon):
+    """الحصول على رابط التنزيل الأصلي للأيقونة"""
+    # نبحث عن رابط تنزيل متاح
+    if icon.get('raster_sizes') and len(icon['raster_sizes']) > 0:
+        sizes = sorted(icon['raster_sizes'], key=lambda x: x['size_width'], reverse=True)
+        return sizes[0]['formats'][0]['download_url']
+    
+    if icon.get('vector_sizes') and len(icon['vector_sizes']) > 0:
+        return icon['vector_sizes'][0]['formats'][0]['download_url']
+    
     return icon.get('preview_url')
 
 def show_result(chat_id, user_id, message_id=None):
@@ -500,6 +489,7 @@ def show_result(chat_id, user_id, message_id=None):
     markup.add(InlineKeyboardButton("⬇️ تحميل", callback_data="download"))
     markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
     
+    # إرسال النتيجة حسب المصدر
     try:
         if source == "iconfinder":
             # الحصول على أفضل صورة متاحة
@@ -529,8 +519,7 @@ def show_result(chat_id, user_id, message_id=None):
             # إرسال رسالة جديدة
             msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
             user_data[user_id]['last_message_id'] = msg.message_id
-        
-        elif source == "pixabay_video":
+        elif source == "pixabay":
             if 'videos' not in item or 'medium' not in item['videos']:
                 logger.error("بيانات الفيديو غير مكتملة")
                 raise ValueError("بيانات الفيديو غير مكتملة")
@@ -553,164 +542,4 @@ def show_result(chat_id, user_id, message_id=None):
                         ),
                         reply_markup=markup
                     )
-                    user_data[user_id]['last_message_id'] = message_id
-                    return
-                except Exception as e:
-                    logger.error(f"فشل في تعديل رسالة الفيديو: {e}")
-            
-            # إرسال رسالة جديدة
-            msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
-            user_data[user_id]['last_message_id'] = msg.message_id
-        
-        elif source == "pixabay_photo":
-            if 'webformatURL' not in item or not item['webformatURL']:
-                logger.error("بيانات الصورة غير مكتملة")
-                raise ValueError("بيانات الصورة غير مكتملة")
-                
-            image_url = item['webformatURL']
-            
-            if not is_valid_url(image_url):
-                logger.error(f"رابط الصورة غير صالح: {image_url}")
-                raise ValueError("رابط الصورة غير صالح")
-            
-            # محاولة تعديل الرسالة الحالية
-            if message_id:
-                try:
-                    bot.edit_message_media(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        media=telebot.types.InputMediaPhoto(
-                            media=image_url,
-                            caption=caption
-                        ),
-                        reply_markup=markup
-                    )
-                    user_data[user_id]['last_message_id'] = message_id
-                    return
-                except Exception as e:
-                    logger.error(f"فشل في تعديل رسالة الصورة: {e}")
-            
-            # إرسال رسالة جديدة
-            msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
-            user_data[user_id]['last_message_id'] = msg.message_id
-        
-        elif source == "blush":
-            # للرسوم من Blush
-            image_url = item.get('previewURL')
-            
-            if not image_url or not is_valid_url(image_url):
-                logger.error(f"رابط الصورة غير صالح: {image_url}")
-                raise ValueError("رابط الصورة غير صالح")
-            
-            # محاولة تعديل الرسالة الحالية
-            if message_id:
-                try:
-                    bot.edit_message_media(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        media=telebot.types.InputMediaPhoto(
-                            media=image_url,
-                            caption=caption
-                        ),
-                        reply_markup=markup
-                    )
-                    user_data[user_id]['last_message_id'] = message_id
-                    return
-                except Exception as e:
-                    logger.error(f"فشل في تعديل رسالة الصورة: {e}")
-            
-            # إرسال رسالة جديدة
-            msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
-            user_data[user_id]['last_message_id'] = msg.message_id
-    
-    except Exception as e:
-        logger.error(f"حدث خطأ أثناء عرض النتيجة: {e}")
-        # في حالة الخطأ، انتقل إلى النتيجة التالية
-        user_data[user_id]['current_index'] += 1
-        if user_data[user_id]['current_index'] < len(results):
-            show_result(chat_id, user_id, message_id)
-        else:
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
-            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
-            
-            try:
-                bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=user_data[user_id].get('search_message_id', 0),
-                    text="حدث خطأ أثناء عرض النتائج، يرجى المحاولة مرة أخرى",
-                    reply_markup=markup
-                )
-            except:
-                pass
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("nav_"))
-def navigate_results(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    
-    if user_id not in user_data or 'search_results' not in user_data[user_id]:
-        bot.answer_callback_query(call.id, "انتهت جلسة البحث، ابدأ بحثاً جديداً")
-        return
-    
-    if call.data == "nav_prev":
-        user_data[user_id]['current_index'] -= 1
-    elif call.data == "nav_next":
-        user_data[user_id]['current_index'] += 1
-    
-    # تأكيد التنقل
-    bot.answer_callback_query(call.id)
-    
-    # عرض النتيجة الجديدة
-    show_result(chat_id, user_id, call.message.message_id)
-
-@bot.callback_query_handler(func=lambda call: call.data == "download")
-def download_item(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    
-    if user_id not in user_data or 'search_results' not in user_data[user_id]:
-        bot.answer_callback_query(call.id, "انتهت جلسة البحث، ابدأ بحثاً جديداً")
-        return
-    
-    current_index = user_data[user_id]['current_index']
-    item = user_data[user_id]['search_results'][current_index]
-    source = user_data[user_id]['source']
-    
-    try:
-        if source == "iconfinder":
-            image_url = get_best_icon_url(item)
-            if image_url and is_valid_url(image_url):
-                bot.send_photo(chat_id, image_url)
-        
-        elif source == "pixabay_video":
-            video_url = item['videos']['medium']['url']
-            if video_url and is_valid_url(video_url):
-                bot.send_video(chat_id, video_url)
-        
-        elif source == "pixabay_photo":
-            image_url = item['webformatURL']
-            if image_url and is_valid_url(image_url):
-                bot.send_photo(chat_id, image_url)
-        
-        elif source == "blush":
-            image_url = item.get('previewURL')
-            if image_url and is_valid_url(image_url):
-                bot.send_photo(chat_id, image_url)
-        
-        bot.answer_callback_query(call.id, "تم الإرسال بنجاح!")
-    
-    except Exception as e:
-        logger.error(f"خطأ في تحميل العنصر: {e}")
-        bot.answer_callback_query(call.id, "❌ فشل في التحميل، يرجى المحاولة لاحقاً")
-
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
-def back_to_main(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    show_main_menu(chat_id, user_id)
-
-# بدء البوت
-if __name__ == "__main__":
-    set_webhook()
-    app.run(host='0.0.0.0', port=5000)
+                    user_data[user_id]['last_message_id'] = messa
