@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 TOKEN = '8110119856:AAFe3EnW8vFAzb_mE_zduxfmSjdC9Gwu-D8'
 ICONFINDER_API_KEY = '7K3SAYeDJcF2F70s1Ue6hAvobN0mZ485PY81X11JktLihGgipDUFudsKahNiyH16'
-ICONFINDER_CLIENT_ID = 'TF6LeU74JhSRd6hfAPNPqMtMCyD8yBvoOgyxMhavP2hnwFRSjjAEg92fjrX9kkQK'
+PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 7251748706  # معرف المدير
-WEBHOOK_URL = 'https://greenpo.onrender.com/webhook'  # تأكد من تطابق هذا مع عنوان URL الخاص بك
+WEBHOOK_URL = 'https://greenpo.onrender.com/webhook'  # تحديث رابط الويب هووك
 
 app = Flask(__name__)
 bot = telebot.TeleBot(TOKEN)
@@ -174,17 +174,16 @@ def show_content_types(call):
         pass
     
     markup = InlineKeyboardMarkup(row_width=2)
-    # إضافة أنواع المحتوى من Iconfinder
+    # إضافة أنواع المحتوى من Iconfinder كما في الصورة
     markup.add(
         InlineKeyboardButton("Icons", callback_data="type_icons"),
         InlineKeyboardButton("Illustrations", callback_data="type_illustrations"),
-        InlineKeyboardButton("Logos", callback_data="type_logos"),
-        InlineKeyboardButton("Photos", callback_data="type_photos"),
-        InlineKeyboardButton("Vectors", callback_data="type_vectors"),
-        InlineKeyboardButton("Videos", callback_data="type_videos"),
-        InlineKeyboardButton("Music", callback_data="type_music"),
-        InlineKeyboardButton("Sounds", callback_data="type_sounds")
+        InlineKeyboardButton("3D Illustrations", callback_data="type_3d"),
+        InlineKeyboardButton("Stickers", callback_data="type_stickers"),
+        InlineKeyboardButton("Videos", callback_data="type_videos")
     )
+    # إضافة زر الرجوع للقائمة الرئيسية
+    markup.add(InlineKeyboardButton("رجوع للقائمة الرئيسية", callback_data="back_to_main"))
     
     try:
         bot.edit_message_text(
@@ -260,8 +259,13 @@ def process_search_term(message, user_id):
     except Exception as e:
         logger.error(f"خطأ في عرض رسالة التحميل: {e}")
     
-    # البحث في Iconfinder
-    results = search_iconfinder(search_term, content_type)
+    # تحديد مصدر البحث بناءً على النوع
+    if content_type == "videos":
+        # البحث في Pixabay للفيديوهات
+        results = search_pixabay(search_term, content_type)
+    else:
+        # البحث في Iconfinder لأنواع المحتوى الأخرى
+        results = search_iconfinder(search_term, content_type)
     
     if not results or len(results) == 0:
         # عرض خيارات عند عدم وجود نتائج
@@ -284,6 +288,7 @@ def process_search_term(message, user_id):
     user_data[user_id]['search_term'] = search_term
     user_data[user_id]['search_results'] = results
     user_data[user_id]['current_index'] = 0
+    user_data[user_id]['source'] = "pixabay" if content_type == "videos" else "iconfinder"
     
     # عرض النتيجة الأولى في نفس رسالة "جاري البحث"
     show_result(chat_id, user_id, message_id=user_data[user_id]['search_message_id'])
@@ -294,6 +299,13 @@ def search_iconfinder(query, content_type):
         'Authorization': f'Bearer {ICONFINDER_API_KEY}',
         'Accept': 'application/json'
     }
+    
+    # إضافة كلمات للاستعلام حسب النوع
+    if content_type == "3d":
+        query = "3d " + query
+    elif content_type == "stickers":
+        query = "sticker " + query
+    
     params = {
         'query': query,
         'count': 50,
@@ -311,6 +323,26 @@ def search_iconfinder(query, content_type):
         return data.get('icons', [])
     except Exception as e:
         logger.error(f"خطأ في واجهة Iconfinder: {e}")
+        return None
+
+def search_pixabay(query, content_type):
+    base_url = "https://pixabay.com/api/videos/"
+    params = {
+        'key': PIXABAY_API_KEY,
+        'q': query,
+        'per_page': 50,
+        'lang': 'en'
+    }
+    
+    try:
+        logger.info(f"البحث في Pixabay عن: {query} (videos)")
+        response = requests.get(base_url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"تم العثور على {len(data.get('hits', []))} نتيجة")
+        return data.get('hits', [])
+    except Exception as e:
+        logger.error(f"خطأ في واجهة Pixabay: {e}")
         return None
 
 def get_best_icon_url(icon):
@@ -339,6 +371,7 @@ def show_result(chat_id, user_id, message_id=None):
     results = user_data[user_id]['search_results']
     current_index = user_data[user_id]['current_index']
     search_term = user_data[user_id].get('search_term', '')
+    source = user_data[user_id].get('source', 'iconfinder')
     
     if current_index < 0 or current_index >= len(results):
         try:
@@ -356,8 +389,6 @@ def show_result(chat_id, user_id, message_id=None):
     # بناء الرسالة
     caption = f"البحث: {search_term}\n"
     caption += f"النتيجة {current_index+1} من {len(results)}\n"
-    if 'tags' in item and item['tags']:
-        caption += f"الوسوم: {', '.join(item['tags'])}\n"
     
     # بناء أزرار التنقل
     markup = InlineKeyboardMarkup()
@@ -373,34 +404,59 @@ def show_result(chat_id, user_id, message_id=None):
     markup.add(InlineKeyboardButton("تحميل", callback_data="download"))
     markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
     
-    # إرسال النتيجة
+    # إرسال النتيجة حسب المصدر
     try:
-        # الحصول على أفضل صورة متاحة
-        image_url = get_best_icon_url(item)
-        
-        if not image_url:
-            raise ValueError("رابط الصورة غير متوفر")
-        
-        # محاولة تعديل الرسالة الحالية
-        if message_id:
-            try:
-                bot.edit_message_media(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    media=telebot.types.InputMediaPhoto(
-                        media=image_url,
-                        caption=caption
-                    ),
-                    reply_markup=markup
-                )
-                user_data[user_id]['last_message_id'] = message_id
-                return
-            except Exception as e:
-                logger.error(f"فشل في تعديل رسالة الصورة: {e}")
-        
-        # إرسال رسالة جديدة
-        msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
-        user_data[user_id]['last_message_id'] = msg.message_id
+        if source == "iconfinder":
+            # الحصول على أفضل صورة متاحة
+            image_url = get_best_icon_url(item)
+            
+            if not image_url:
+                raise ValueError("رابط الصورة غير متوفر")
+            
+            # محاولة تعديل الرسالة الحالية
+            if message_id:
+                try:
+                    bot.edit_message_media(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        media=telebot.types.InputMediaPhoto(
+                            media=image_url,
+                            caption=caption
+                        ),
+                        reply_markup=markup
+                    )
+                    user_data[user_id]['last_message_id'] = message_id
+                    return
+                except Exception as e:
+                    logger.error(f"فشل في تعديل رسالة الصورة: {e}")
+            
+            # إرسال رسالة جديدة
+            msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
+            user_data[user_id]['last_message_id'] = msg.message_id
+        else:  # pixabay
+            video_url = item['videos']['medium']['url']
+            
+            # محاولة تعديل الرسالة الحالية
+            if message_id:
+                try:
+                    bot.edit_message_media(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        media=telebot.types.InputMediaVideo(
+                            media=video_url,
+                            caption=caption
+                        ),
+                        reply_markup=markup
+                    )
+                    user_data[user_id]['last_message_id'] = message_id
+                    return
+                except Exception as e:
+                    logger.error(f"فشل في تعديل رسالة الفيديو: {e}")
+            
+            # إرسال رسالة جديدة
+            msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
+            user_data[user_id]['last_message_id'] = msg.message_id
+            
     except Exception as e:
         logger.error(f"خطأ في عرض النتيجة: {e}")
         # المحاولة مع نتيجة أخرى
@@ -450,6 +506,8 @@ def navigate_results(call):
 def download_content(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
+    current_index = user_data[user_id]['current_index']
+    source = user_data[user_id].get('source', 'iconfinder')
     
     # إزالة أزرار التنقل
     try:
@@ -466,12 +524,17 @@ def download_content(call):
     
     # إرسال الملف الأصلي
     try:
-        item = user_data[user_id]['search_results'][user_data[user_id]['current_index']]
-        download_url = get_best_icon_url(item)
+        item = user_data[user_id]['search_results'][current_index]
         
-        if download_url:
-            # إرسال الصورة
-            bot.send_photo(chat_id, download_url)
+        if source == "iconfinder":
+            download_url = get_best_icon_url(item)
+            if download_url:
+                # إرسال الصورة
+                bot.send_photo(chat_id, download_url)
+        else:  # pixabay
+            # إرسال أفضل جودة فيديو متاحة
+            video_url = item['videos']['large']['url'] if 'large' in item['videos'] else item['videos']['medium']['url']
+            bot.send_video(chat_id, video_url)
     except Exception as e:
         logger.error(f"خطأ في إرسال الملف: {e}")
     
