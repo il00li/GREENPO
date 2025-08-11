@@ -310,8 +310,7 @@ def search_iconfinder(query, content_type):
         'query': query,
         'count': 50,
         'premium': 'false',
-        'license': 'free',
-        'style': content_type
+        'license': 'free'
     }
     
     try:
@@ -319,8 +318,18 @@ def search_iconfinder(query, content_type):
         response = requests.get(base_url, headers=headers, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
-        logger.info(f"تم العثور على {len(data.get('icons', []))} نتيجة")
-        return data.get('icons', [])
+        icons = data.get('icons', [])
+        logger.info(f"تم العثور على {len(icons)} نتيجة")
+        
+        # إرجاع فقط النتائج التي تحتوي على صور صالحة
+        valid_results = []
+        for icon in icons:
+            preview_url = get_best_icon_url(icon)
+            if preview_url and is_valid_url(preview_url):
+                valid_results.append(icon)
+        
+        logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
+        return valid_results
     except Exception as e:
         logger.error(f"خطأ في واجهة Iconfinder: {e}")
         return None
@@ -339,8 +348,19 @@ def search_pixabay(query, content_type):
         response = requests.get(base_url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
-        logger.info(f"تم العثور على {len(data.get('hits', []))} نتيجة")
-        return data.get('hits', [])
+        hits = data.get('hits', [])
+        logger.info(f"تم العثور على {len(hits)} نتيجة")
+        
+        # إرجاع فقط النتائج التي تحتوي على فيديو صالح
+        valid_results = []
+        for hit in hits:
+            if 'videos' in hit and 'medium' in hit['videos']:
+                video_url = hit['videos']['medium']['url']
+                if is_valid_url(video_url):
+                    valid_results.append(hit)
+        
+        logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
+        return valid_results
     except Exception as e:
         logger.error(f"خطأ في واجهة Pixabay: {e}")
         return None
@@ -354,14 +374,20 @@ def get_best_icon_url(icon):
         # نأخذ أعلى دقة
         return sizes[0]['formats'][0]['preview_url']
     
-    return None
+    # إذا لم يكن هناك raster_sizes، نبحث في vector_sizes
+    if icon.get('vector_sizes') and len(icon['vector_sizes']) > 0:
+        # نرتب الأحجام حسب الدقة (نريد الأكبر) - لكن المتجهات ليس لها دقة بالمعنى النقطي، نأخذ الأول
+        return icon['vector_sizes'][0]['formats'][0]['preview_url']
+    
+    # خيار أخير: استخدام الرابط الأساسي
+    return icon.get('preview_url')
 
 def show_result(chat_id, user_id, message_id=None):
     if user_id not in user_data or 'search_results' not in user_data[user_id]:
         try:
             bot.edit_message_text(
                 chat_id=chat_id,
-                message_id=user_data[user_id]['search_message_id'],
+                message_id=user_data[user_id].get('search_message_id', 0),
                 text="انتهت جلسة البحث، ابدأ بحثاً جديداً"
             )
         except:
@@ -377,7 +403,7 @@ def show_result(chat_id, user_id, message_id=None):
         try:
             bot.edit_message_text(
                 chat_id=chat_id,
-                message_id=user_data[user_id]['last_message_id'],
+                message_id=user_data[user_id].get('last_message_id', 0),
                 text="نهاية النتائج"
             )
         except:
@@ -410,8 +436,9 @@ def show_result(chat_id, user_id, message_id=None):
             # الحصول على أفضل صورة متاحة
             image_url = get_best_icon_url(item)
             
-            if not image_url:
-                raise ValueError("رابط الصورة غير متوفر")
+            if not image_url or not is_valid_url(image_url):
+                logger.error(f"رابط الصورة غير صالح: {image_url}")
+                raise ValueError("رابط الصورة غير صالح")
             
             # محاولة تعديل الرسالة الحالية
             if message_id:
@@ -434,7 +461,15 @@ def show_result(chat_id, user_id, message_id=None):
             msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
             user_data[user_id]['last_message_id'] = msg.message_id
         else:  # pixabay
+            if 'videos' not in item or 'medium' not in item['videos']:
+                logger.error("بيانات الفيديو غير مكتملة")
+                raise ValueError("بيانات الفيديو غير مكتملة")
+                
             video_url = item['videos']['medium']['url']
+            
+            if not is_valid_url(video_url):
+                logger.error(f"رابط الفيديو غير صالح: {video_url}")
+                raise ValueError("رابط الفيديو غير صالح")
             
             # محاولة تعديل الرسالة الحالية
             if message_id:
@@ -473,7 +508,7 @@ def show_no_results(chat_id, user_id):
     try:
         bot.edit_message_text(
             chat_id=chat_id,
-            message_id=user_data[user_id]['search_message_id'],
+            message_id=user_data[user_id].get('search_message_id', 0),
             text="لم يتم العثور على أي نتائج، يرجى المحاولة بكلمات أخرى",
             reply_markup=markup
         )
@@ -528,13 +563,24 @@ def download_content(call):
         
         if source == "iconfinder":
             download_url = get_best_icon_url(item)
-            if download_url:
+            if download_url and is_valid_url(download_url):
                 # إرسال الصورة
                 bot.send_photo(chat_id, download_url)
+            else:
+                logger.error("رابط التحميل غير صالح")
         else:  # pixabay
             # إرسال أفضل جودة فيديو متاحة
-            video_url = item['videos']['large']['url'] if 'large' in item['videos'] else item['videos']['medium']['url']
-            bot.send_video(chat_id, video_url)
+            if 'large' in item['videos']:
+                video_url = item['videos']['large']['url']
+            elif 'medium' in item['videos']:
+                video_url = item['videos']['medium']['url']
+            else:
+                video_url = item['videos']['small']['url']
+            
+            if is_valid_url(video_url):
+                bot.send_video(chat_id, video_url)
+            else:
+                logger.error("رابط الفيديو غير صالح")
     except Exception as e:
         logger.error(f"خطأ في إرسال الملف: {e}")
     
