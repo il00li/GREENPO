@@ -112,8 +112,8 @@ def show_main_menu(chat_id, user_id):
         user_data[user_id] = {}
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("انقر للبحث", callback_data="search"))
-    markup.add(InlineKeyboardButton("عن المطور", callback_data="about_dev"))
+    markup.add(InlineKeyboardButton("🔍 بدء البحث", callback_data="search"))
+    markup.add(InlineKeyboardButton("👤 عن المطور", callback_data="about_dev"))
     
     welcome_msg = "ICONFINDBOT\nابحث عن أيقونات ورسومات"
     
@@ -174,16 +174,14 @@ def show_content_types(call):
         pass
     
     markup = InlineKeyboardMarkup(row_width=2)
-    # إضافة أنواع المحتوى من Iconfinder كما في الصورة
+    # تحديث أنواع المحتوى حسب الطلب
     markup.add(
-        InlineKeyboardButton("Icons", callback_data="type_icons"),
-        InlineKeyboardButton("Illustrations", callback_data="type_illustrations"),
-        InlineKeyboardButton("3D Illustrations", callback_data="type_3d"),
-        InlineKeyboardButton("Stickers", callback_data="type_stickers"),
-        InlineKeyboardButton("Videos", callback_data="type_videos")
+        InlineKeyboardButton("🎨 رسوم توضيحية", callback_data="type_blush_illustrations"),
+        InlineKeyboardButton("🎬 فيديوهات", callback_data="type_videos"),
+        InlineKeyboardButton("🖼️ أيقونات", callback_data="type_icons")
     )
     # إضافة زر الرجوع للقائمة الرئيسية
-    markup.add(InlineKeyboardButton("رجوع للقائمة الرئيسية", callback_data="back_to_main"))
+    markup.add(InlineKeyboardButton("🏠 رجوع للقائمة الرئيسية", callback_data="back_to_main"))
     
     try:
         bot.edit_message_text(
@@ -263,6 +261,9 @@ def process_search_term(message, user_id):
     if content_type == "videos":
         # البحث في Pixabay للفيديوهات
         results = search_pixabay(search_term, content_type)
+    elif content_type == "blush_illustrations":
+        # البحث في Blush للرسوم التوضيحية
+        results = search_blush(search_term)
     else:
         # البحث في Iconfinder لأنواع المحتوى الأخرى
         results = search_iconfinder(search_term, content_type)
@@ -271,7 +272,7 @@ def process_search_term(message, user_id):
         # عرض خيارات عند عدم وجود نتائج
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
-        markup.add(InlineKeyboardButton("القائمة الرئيسية", callback_data="back_to_main"))
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
         
         try:
             bot.edit_message_text(
@@ -288,10 +289,38 @@ def process_search_term(message, user_id):
     user_data[user_id]['search_term'] = search_term
     user_data[user_id]['search_results'] = results
     user_data[user_id]['current_index'] = 0
-    user_data[user_id]['source'] = "pixabay" if content_type == "videos" else "iconfinder"
+    user_data[user_id]['source'] = "pixabay" if content_type == "videos" else ("blush" if content_type == "blush_illustrations" else "iconfinder")
     
     # عرض النتيجة الأولى في نفس رسالة "جاري البحث"
     show_result(chat_id, user_id, message_id=user_data[user_id]['search_message_id'])
+
+def search_blush(query):
+    """البحث في Blush API للرسوم التوضيحية"""
+    base_url = "https://blush.design/api/illustrations"
+    params = {
+        'search': query,
+        'limit': 50
+    }
+    
+    try:
+        logger.info(f"البحث في Blush عن: {query}")
+        response = requests.get(base_url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"تم العثور على {len(data)} نتيجة")
+        
+        # إرجاع فقط النتائج التي تحتوي على صور صالحة
+        valid_results = []
+        for item in data:
+            preview_url = item.get('previewURL')
+            if preview_url and is_valid_url(preview_url):
+                valid_results.append(item)
+        
+        logger.info(f"عدد النتائج الصالحة: {len(valid_results)}")
+        return valid_results
+    except Exception as e:
+        logger.error(f"خطأ في واجهة Blush: {e}")
+        return None
 
 def search_iconfinder(query, content_type):
     base_url = "https://api.iconfinder.com/v4/icons/search"
@@ -436,8 +465,8 @@ def show_result(chat_id, user_id, message_id=None):
     if row_buttons:
         markup.row(*row_buttons)
     
-    markup.add(InlineKeyboardButton("تحميل", callback_data="download"))
-    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
+    markup.add(InlineKeyboardButton("⬇️ تحميل", callback_data="download"))
+    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))  # تحديث زر بحث جديد
     
     # إرسال النتيجة حسب المصدر
     try:
@@ -469,7 +498,7 @@ def show_result(chat_id, user_id, message_id=None):
             # إرسال رسالة جديدة
             msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
             user_data[user_id]['last_message_id'] = msg.message_id
-        else:  # pixabay
+        elif source == "pixabay":
             if 'videos' not in item or 'medium' not in item['videos']:
                 logger.error("بيانات الفيديو غير مكتملة")
                 raise ValueError("بيانات الفيديو غير مكتملة")
@@ -500,147 +529,26 @@ def show_result(chat_id, user_id, message_id=None):
             # إرسال رسالة جديدة
             msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
             user_data[user_id]['last_message_id'] = msg.message_id
+        elif source == "blush":
+            # للرسوم من Blush
+            image_url = item.get('previewURL')
             
-    except Exception as e:
-        logger.error(f"خطأ في عرض النتيجة: {e}")
-        # المحاولة مع نتيجة أخرى
-        user_data[user_id]['current_index'] += 1
-        if user_data[user_id]['current_index'] < len(results):
-            show_result(chat_id, user_id, message_id)
-        else:
-            show_no_results(chat_id, user_id)
-
-def show_no_results(chat_id, user_id):
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
-    markup.add(InlineKeyboardButton("القائمة الرئيسية", callback_data="back_to_main"))
-    try:
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=user_data[user_id].get('search_message_id', 0),
-            text="لم يتم العثور على أي نتائج، يرجى المحاولة بكلمات أخرى",
-            reply_markup=markup
-        )
-    except Exception as e:
-        logger.error(f"خطأ في عرض رسالة عدم وجود نتائج: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("nav_"))
-def navigate_results(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    action = call.data.split("_")[1]
-    
-    if user_id not in user_data or 'search_results' not in user_data[user_id]:
-        bot.answer_callback_query(call.id, "انتهت جلسة البحث، ابدأ بحثاً جديداً")
-        return
-    
-    # تحديث الفهرس
-    if action == 'prev':
-        user_data[user_id]['current_index'] -= 1
-    elif action == 'next':
-        user_data[user_id]['current_index'] += 1
-    
-    # حفظ معرف الرسالة الحالية (التي نضغط عليها)
-    user_data[user_id]['last_message_id'] = call.message.message_id
-    
-    # عرض النتيجة الجديدة في نفس الرسالة
-    show_result(chat_id, user_id, message_id=call.message.message_id)
-
-@bot.callback_query_handler(func=lambda call: call.data == "download")
-def download_content(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    current_index = user_data[user_id]['current_index']
-    source = user_data[user_id].get('source', 'iconfinder')
-    
-    # إزالة أزرار التنقل
-    try:
-        bot.edit_message_reply_markup(
-            chat_id=chat_id,
-            message_id=call.message.message_id,
-            reply_markup=None
-        )
-    except Exception as e:
-        logger.error(f"خطأ في ازالة الازرار: {e}")
-    
-    # إظهار رسالة تأكيد
-    bot.answer_callback_query(call.id, "تم التحميل بنجاح!", show_alert=False)
-    
-    # إرسال الملف الأصلي
-    try:
-        item = user_data[user_id]['search_results'][current_index]
-        
-        if source == "iconfinder":
-            download_url = get_best_icon_url(item)
-            if download_url and is_valid_url(download_url):
-                # إرسال الصورة
-                bot.send_photo(chat_id, download_url)
-            else:
-                logger.error("رابط التحميل غير صالح")
-        else:  # pixabay
-            # إرسال أفضل جودة فيديو متاحة
-            if 'large' in item['videos']:
-                video_url = item['videos']['large']['url']
-            elif 'medium' in item['videos']:
-                video_url = item['videos']['medium']['url']
-            else:
-                video_url = item['videos']['small']['url']
+            if not image_url or not is_valid_url(image_url):
+                logger.error(f"رابط الصورة غير صالح: {image_url}")
+                raise ValueError("رابط الصورة غير صالح")
             
-            if is_valid_url(video_url):
-                bot.send_video(chat_id, video_url)
-            else:
-                logger.error("رابط الفيديو غير صالح")
-    except Exception as e:
-        logger.error(f"خطأ في إرسال الملف: {e}")
-    
-    # إظهار خيارات جديدة في رسالة منفصلة
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
-    markup.add(InlineKeyboardButton("القائمة الرئيسية", callback_data="back_to_main"))
-    
-    bot.send_message(chat_id, "تم تحميل المحتوى بنجاح!\nماذا تريد أن تفعل الآن؟", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data == "about_dev")
-def show_dev_info(call):
-    dev_info = """
-عن المطور @Ili8_8ill
-مطور مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعالة.
-
-ما يميزه في هذه المرحلة:
-- حب الاستكشاف والتعلم الذاتي
-- بناء بوتات بسيطة بمهام محددة
-- استخدام أدوات مثل BotFather و Python
-- الانفتاح على النقد والتطوير المستمر
-
-القنوات المرتبطة:
-@crazys7 - @AWU87
-
-رؤية المطور:
-الانطلاق من الأساسيات نحو الاحتراف، خطوة بخطوة، مع طموح لصناعة بوتات تلبي احتياجات حقيقية وتحدث فرقًا.
-
-للتواصل:
-تابع الحساب @Ili8_8ill
-    """
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("رجوع", callback_data="back_to_main"))
-    
-    try:
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=dev_info,
-            reply_markup=markup
-        )
-    except Exception as e:
-        logger.error(f"خطأ في عرض معلومات المطور: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
-def return_to_main(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    show_main_menu(chat_id, user_id)
-
-if __name__ == '__main__':
-    logger.info("بدء تشغيل البوت...")
-    set_webhook()
-    app.run(host='0.0.0.0', port=10000) 
+            # محاولة تعديل الرسالة الحالية
+            if message_id:
+                try:
+                    bot.edit_message_media(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        media=telebot.types.InputMediaPhoto(
+                            media=image_url,
+                            caption=caption
+                        ),
+                        reply_markup=markup
+                    )
+                    user_data[user_id]['last_message_id'] = message_id
+                    return
+                except
