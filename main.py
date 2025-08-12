@@ -391,7 +391,7 @@ def send_result(user_id, chat_id, message_id, index):
     
     # إرسال الوسائط مع معالجة الأخطاء
     try:
-        if media_url and (media_url.endswith(('.jpg', '.jpeg', '.png')) and requests.head(media_url).status_code == 200:
+        if media_url and (media_url.endswith('.jpg', '.jpeg', '.png') and requests.head(media_url).status_code == 200:
             if message_id:
                 try:
                     bot.delete_message(chat_id, message_id)
