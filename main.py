@@ -4,7 +4,7 @@ import requests
 import json
 
 # تكوين البوت
-TOKEN = "8110119856:AAEMbomUhyXXrR8Y-YvmTJR4jmDP1-y-tQo"
+TOKEN = "8110119856:AAGbhhB7lyxEH5D6i9brtcJhyHJQkLCu3tI"
 ADMIN_ID = 7251748706
 CHANNELS = ["@crazys7", "@AWU87"]
 LUMMI_API_KEY = "lummi-b06d12ba02329efb74404de07e20b434aff295de34419f35c56eb3e200f05a71"
