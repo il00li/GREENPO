@@ -6,7 +6,7 @@ import os
 import time
 
 # تهيئة البيانات الأساسية
-TOKEN = "8110119856:AAEMbomUhyXXrR8Y-YvmTJR4jmDP1-y-tQo"
+TOKEN = "8110119856:AAGW43nAU_yO7PF7CQ096kKDlWb-Eab7IP4"
 MANAGER_ID = 7251748706
 CHANNELS = ["@crazys7", "@AWU87"]
 ICONSCOUT_API_KEY = "8dl0PoAXaQD2t0mjPwdfjUQ02DRLJGej"
