@@ -18,7 +18,7 @@ from telethon.sessions import StringSession
 from telethon.tl.types import InputPeerChannel, Channel
 
 # تكوين البوت
-TOKEN = "7966976239:AAHLSZafl8E_j1GNT0TfTuRjZRfNAXMvzDs"
+TOKEN = "8110119856:AAGW43nAU_yO7PF7CQ096kKDlWb-Eab7IP4"
 API_ID = 23656977
 API_HASH = "49d3f43531a92b3f5bc403766313ca1e"
 DEVELOPER = "@Ili8_8ill"
