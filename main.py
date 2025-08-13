@@ -11,7 +11,7 @@ from urllib.parse import quote
 app = Flask(__name__)
 
 # تكوين البوت
-TOKEN = "8110119856:AAEMbomUhyXXrR8Y-YvmTJR4jmDP1-y-tQo"
+TOKEN = "8110119856:AAFanYZW3SsLlbci9TPoESWXURsqOgJ3mNQ"
 ADMIN_ID = 7251748706
 CHANNELS = ["@crazys7", "@AWU87"]
 WEBHOOK_URL = "https://greenpo.onrender.com/webhook"
