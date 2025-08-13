@@ -26,7 +26,7 @@ API_HASH = os.getenv('API_HASH', '49d3f43531a92b3f5bc403766313ca1e')
 DEVELOPER = os.getenv('DEVELOPER', '@Ili8_8ill')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://greenpo.onrender.com')
 PORT = int(os.getenv('PORT', '5000'))
-REQUIRED_CHANNELS = os.getenv('REQUIRED_CHANNELS', 't.me/channel1,t.me/channel2').split(',')
+REQUIRED_CHANNELS = os.getenv('REQUIRED_CHANNELS', 't.me/crazys7,t.me/AWU87').split(',')
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'SECRET_TOKEN')
 INVITES_REQUIRED = 5  # عدد الدعوات المطلوبة
 
