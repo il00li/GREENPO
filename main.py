@@ -1,5 +1,6 @@
 import asyncio
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.tl.functions.channels import InviteToChannelRequest
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
@@ -19,16 +20,22 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # رموز تعبيرية عشوائية
 EMOJIS = ['🦗', '🐌', '🐗', '🦅', '🦃', '🦆', '🐐', '🦇', '🐕', '🐶']
 
-# جلسة Telethon الجاهزة
-SESSION_STRING = "1BJWap1wBu56xGro9VFUD1nPK6l1gVBxtfqacLwevl8n54WuZdL9_AJL-VLwYVMkYOP7oZlQ7VVqvcqu1M5k3uxi00Syd_skjjnpbG6LUZMAMmPvoRq9i8SnfTDveV33cT4TwbGO2uOw_xHqE_mY6wrK3vTv9-i89-pY1YK1-yoKGoMiCHax0F0UCoMAq6EkXrF5RDOXVoQXSyMYaKrocQz1WK6FxnI2s9ZCw5e05KUUhXcitlED0FKZIpNPb3dluV9ohKEZ3MSW2zTTc9K_zXbC1uK2McR1ML1VPYJG2H95BCEE7LTuQCCfZS6shDkWo0yvCjbf-viXGbQPyiejL058pCfpUcNA="
-
 # تخزين العمليات النشطة
 active_transfers = {}
+user_sessions = {}
 
 # تهيئة قاعدة البيانات
 def init_db():
     conn = sqlite3.connect('member_transfer.db')
     cursor = conn.cursor()
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_sessions (
+        user_id INTEGER PRIMARY KEY,
+        session_string TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS transfers (
@@ -51,6 +58,22 @@ init_db()
 # وظائف المساعدة لقاعدة البيانات
 def get_db_connection():
     return sqlite3.connect('member_transfer.db')
+
+def save_user_session(user_id, session_string):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO user_sessions (user_id, session_string) VALUES (?, ?)',
+                   (user_id, session_string))
+    conn.commit()
+    conn.close()
+
+def get_user_session(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT session_string FROM user_sessions WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 def save_transfer_record(user_id, source_group, target_group, members_count, success_count, status):
     conn = get_db_connection()
@@ -85,18 +108,12 @@ async def add_member_to_group(client, user, target_group):
         print(f"Error adding member {user.id} to {target_group}: {e}")
         return False
 
-# دالة لإزالة أزرار الكيبورد
-def remove_keyboard(chat_id, text="تم إزالة الأزرار"):
-    bot.send_message(chat_id, text, reply_markup=ReplyKeyboardRemove())
-
 # دالة لعرض القائمة الرئيسية باستخدام Inline Keyboard
 def show_main_menu(chat_id):
-    remove_keyboard(chat_id, "اختر من الخيارات التالية:")
-    
     markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton(f"إدخال رمز الجلسة {random.choice(EMOJIS)}", callback_data="input_session"))
     markup.add(InlineKeyboardButton(f"نقل الأعضاء {random.choice(EMOJIS)}", callback_data="transfer"))
     markup.add(InlineKeyboardButton(f"حالة النقل {random.choice(EMOJIS)}", callback_data="status"))
-    markup.add(InlineKeyboardButton(f"إلغاء العملية {random.choice(EMOJIS)}", callback_data="cancel"))
     
     bot.send_message(chat_id, "القائمة الرئيسية:", reply_markup=markup)
 
@@ -106,9 +123,33 @@ def send_welcome(message):
     user_id = message.from_user.id
     show_main_menu(user_id)
 
+@bot.callback_query_handler(func=lambda call: call.data == "input_session")
+def request_session_string(call):
+    user_id = call.from_user.id
+    msg = bot.send_message(user_id, "أرسل رمز الجلسة الخاص بك:")
+    bot.register_next_step_handler(msg, process_session_string)
+
+def process_session_string(message):
+    user_id = message.from_user.id
+    session_string = message.text
+    
+    # حفظ رمز الجلسة
+    save_user_session(user_id, session_string)
+    user_sessions[user_id] = session_string
+    
+    bot.send_message(user_id, "✅ تم حفظ رمز الجلسة بنجاح!")
+    show_main_menu(user_id)
+
 @bot.callback_query_handler(func=lambda call: call.data == "transfer")
 def request_source_group(call):
     user_id = call.from_user.id
+    
+    # التحقق من وجود جلسة للمستخدم
+    session_string = get_user_session(user_id)
+    if not session_string:
+        bot.send_message(user_id, "❌ لم تقم بإدخال رمز الجلسة بعد. يرجى إدخاله أولاً.")
+        show_main_menu(user_id)
+        return
     
     # إلغاء أي عملية نقل نشطة سابقة
     if user_id in active_transfers:
@@ -179,14 +220,22 @@ def run_async_transfer(user_id, source_group, target_group):
     loop.close()
 
 async def transfer_members(user_id, source_group, target_group):
+    # الحصول على رمز الجلسة من قاعدة البيانات
+    session_string = get_user_session(user_id)
+    
+    if not session_string:
+        bot.send_message(user_id, "❌ لم يتم العثور على رمز الجلسة. يرجى إدخاله أولاً.")
+        show_main_menu(user_id)
+        return
+    
     try:
-        # إنشاء العميل باستخدام الجلسة الجاهزة
-        client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+        # إنشاء العميل باستخدام الجلسة
+        client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
         
         await client.connect()
         
         if not await client.is_user_authorized():
-            bot.send_message(user_id, "❌ الجلسة غير صالحة. يرجى تحديث الجلسة.")
+            bot.send_message(user_id, "❌ الجلسة غير صالحة. يرجى إدخال رمز جلسة صحيح.")
             show_main_menu(user_id)
             return
         
@@ -259,27 +308,13 @@ def show_transfer_status(call):
     bot.send_message(user_id, status_text)
     show_main_menu(user_id)
 
-@bot.callback_query_handler(func=lambda call: call.data == "cancel")
-def cancel_operation(call):
-    user_id = call.from_user.id
-    
-    if user_id in active_transfers:
-        del active_transfers[user_id]
-    
-    bot.send_message(user_id, "✅ تم إلغاء العملية الحالية.")
-    show_main_menu(user_id)
-
 # معالجة أي رسائل أخرى
 @bot.message_handler(func=lambda message: True)
 def handle_other_messages(message):
     user_id = message.from_user.id
     show_main_menu(user_id)
 
-# التأكد من وجود مجلد الجلسات
-if not os.path.exists('sessions'):
-    os.makedirs('sessions')
-
 # تشغيل البوت
 if __name__ == "__main__":
     print("Bot is running...")
-    bot.infinity_polling() 
+    bot.infinity_polling()
