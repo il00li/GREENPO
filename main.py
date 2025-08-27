@@ -13,7 +13,7 @@ API_ID = 23656977
 API_HASH = '49d3f43531a92b3f5bc403766313ca1e'
 
 # إعدادات بوت التلجرام
-BOT_TOKEN = '7545979856:AAH4YXddSwBWwgvjQPxY8tGarBgptMhy0p0'
+BOT_TOKEN = '8300609210:AAGHCu5Un2UDMEnxy4Oh-QCY1_kVDm3S6Ro'
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # رموز تعبيرية عشوائية
