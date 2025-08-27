@@ -1,12 +1,12 @@
 import asyncio
-from telethon import TelegramClient, events
-from telethon.tl.functions.channels import InviteToChannelRequest, GetParticipantsRequest
-from telethon.tl.types import ChannelParticipantsSearch, InputPeerUser
+from telethon import TelegramClient
+from telethon.tl.functions.channels import InviteToChannelRequest
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 import sqlite3
 import os
 import random
+import threading
 
 # إعدادات Telethon
 API_ID = 23656977
@@ -21,6 +21,7 @@ EMOJIS = ['🦗', '🐌', '🐗', '🦅', '🦃', '🦆', '🐐', '🦇', '🐕'
 
 # تخزين جلسات المستخدمين
 user_sessions = {}
+transfer_tasks = {}
 
 # تهيئة قاعدة البيانات
 def init_db():
@@ -107,21 +108,31 @@ async def add_member_to_group(client, user, target_group):
         print(f"Error adding member {user.id} to {target_group}: {e}")
         return False
 
+# دالة لإزالة أزرار الكيبورد
+def remove_keyboard(chat_id, text="تم إزالة الأزرار"):
+    bot.send_message(chat_id, text, reply_markup=ReplyKeyboardRemove())
+
+# دالة لعرض القائمة الرئيسية باستخدام Inline Keyboard
+def show_main_menu(chat_id):
+    remove_keyboard(chat_id, "اختر من الخيارات التالية:")
+    
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton(f"تسجيل {random.choice(EMOJIS)}", callback_data="register"))
+    markup.add(InlineKeyboardButton(f"نقل الأعضاء {random.choice(EMOJIS)}", callback_data="transfer"))
+    markup.add(InlineKeyboardButton(f"حالة النقل {random.choice(EMOJIS)}", callback_data="status"))
+    
+    bot.send_message(chat_id, "القائمة الرئيسية:", reply_markup=markup)
+
 # معالجات البوت
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
-    
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(KeyboardButton(f"تسجيل {random.choice(EMOJIS)}"))
-    markup.add(KeyboardButton(f"نقل {random.choice(EMOJIS)}"))
-    markup.add(KeyboardButton(f"حالة {random.choice(EMOJIS)}"))
-    
-    bot.send_message(message.chat.id, "مرحبًا! اختر من الخيارات:", reply_markup=markup)
+    show_main_menu(user_id)
 
-@bot.message_handler(func=lambda message: message.text.startswith("تسجيل"))
-def request_phone(message):
-    msg = bot.send_message(message.chat.id, "أرسل رقم هاتفك (مثل: +1234567890):")
+@bot.callback_query_handler(func=lambda call: call.data == "register")
+def request_phone(call):
+    user_id = call.from_user.id
+    msg = bot.send_message(user_id, "أرسل رقم هاتفك (مثل: +1234567890):")
     bot.register_next_step_handler(msg, process_phone)
 
 def process_phone(message):
@@ -132,10 +143,16 @@ def process_phone(message):
     session_file = f"sessions/{user_id}.session"
     save_user_session(user_id, phone, session_file)
     
-    # بدء عملية تسجيل الدخول
-    asyncio.run(login_user(user_id, phone, session_file))
+    # بدء عملية تسجيل الدخول في thread منفصل
+    threading.Thread(target=run_async_login, args=(user_id, phone, session_file)).start()
     
-    bot.send_message(message.chat.id, "تم الحفظ. سنرسل رمز التحقق قريبًا.")
+    bot.send_message(user_id, "تم حفظ معلوماتك. جاري إرسال رمز التحقق...")
+
+def run_async_login(user_id, phone, session_file):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(login_user(user_id, phone, session_file))
+    loop.close()
 
 async def login_user(user_id, phone, session_file):
     client = TelegramClient(session_file, API_ID, API_HASH)
@@ -144,26 +161,27 @@ async def login_user(user_id, phone, session_file):
     if not await client.is_user_authorized():
         await client.send_code_request(phone)
         user_sessions[user_id] = {'client': client, 'phone': phone, 'step': 'code'}
-        bot.send_message(user_id, "تم إرسال رمز التحقق. أرسله الآن.")
+        bot.send_message(user_id, "تم إرسال رمز التحقق. أرسل الرمز الآن.")
 
-@bot.message_handler(func=lambda message: message.text.startswith("نقل"))
-def request_source_group(message):
-    user_id = message.from_user.id
+@bot.callback_query_handler(func=lambda call: call.data == "transfer")
+def request_source_group(call):
+    user_id = call.from_user.id
     
     # التحقق من أن المستخدم سجل الدخول
     session_info = get_user_session(user_id)
     if not session_info:
-        bot.send_message(message.chat.id, "سجل الدخول أولاً.")
+        bot.send_message(user_id, "يجب عليك تسجيل الدخول أولاً.")
+        show_main_menu(user_id)
         return
     
-    msg = bot.send_message(message.chat.id, "أرسل معرف المصدر (مثل: @group_username):")
+    msg = bot.send_message(user_id, "أرسل معرف المجموعة المصدر (مثل: @group_username):")
     bot.register_next_step_handler(msg, process_source_group)
 
 def process_source_group(message):
     user_id = message.from_user.id
     source_group = message.text
     
-    msg = bot.send_message(message.chat.id, "أرسل معرف الهدف (القناة/المجموعة):")
+    msg = bot.send_message(user_id, "أرسل معرف المجموعة الهدف (القناة أو المجموعة التي تريد نقل الأعضاء إليها):")
     bot.register_next_step_handler(msg, lambda m: process_target_group(m, source_group))
 
 def process_target_group(message, source_group):
@@ -171,15 +189,21 @@ def process_target_group(message, source_group):
     target_group = message.text
     
     # البدء في عملية نقل الأعضاء
-    bot.send_message(message.chat.id, "جاري البدء...")
+    bot.send_message(user_id, "جاري بدء عملية نقل الأعضاء...")
     
-    # تشغيل عملية النقل في الخلفية
-    asyncio.run(transfer_members(user_id, source_group, target_group))
+    # تشغيل عملية النقل في thread منفصل
+    threading.Thread(target=run_async_transfer, args=(user_id, source_group, target_group)).start()
+
+def run_async_transfer(user_id, source_group, target_group):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(transfer_members(user_id, source_group, target_group))
+    loop.close()
 
 async def transfer_members(user_id, source_group, target_group):
     session_info = get_user_session(user_id)
     if not session_info:
-        bot.send_message(user_id, "لم يتم العثور على الجلسة.")
+        bot.send_message(user_id, "لم يتم العثور على معلومات الجلسة. يرجى تسجيل الدخول أولاً.")
         return
     
     phone, session_file = session_info
@@ -190,35 +214,36 @@ async def transfer_members(user_id, source_group, target_group):
         await client.connect()
         
         if not await client.is_user_authorized():
-            bot.send_message(user_id, "أكمل التسجيل أولاً.")
+            bot.send_message(user_id, "لم يتم تسجيل الدخول بعد. يرجى إكمال عملية التسجيل.")
             return
         
         # الحصول على أعضاء المجموعة المصدر
-        bot.send_message(user_id, "جاري جلب الأعضاء...")
+        bot.send_message(user_id, "جاري جلب قائمة الأعضاء من المجموعة المصدر...")
         members = await get_group_members(client, source_group)
         
         if not members:
-            bot.send_message(user_id, "لم يتم العثور على أعضاء.")
+            bot.send_message(user_id, "لم يتم العثور على أعضاء أو لا يمكن الوصول إلى المجموعة.")
             return
         
-        bot.send_message(user_id, f"تم العثور على {len(members)} عضو. جاري النقل...")
+        bot.send_message(user_id, f"تم العثور على {len(members)} عضو. جاري بدء عملية النقل...")
         
         success_count = 0
         fail_count = 0
         
-        for member in members:
+        for i, member in enumerate(members):
             try:
                 # إضافة العضو إلى المجموعة الهدف مباشرة
                 if await add_member_to_group(client, member, target_group):
                     success_count += 1
-                    # تأجيل بين كل عملية إضافة
-                    await asyncio.sleep(random.uniform(2, 5))
                 else:
                     fail_count += 1
                 
                 # إرسال تحديث كل 5 أعضاء
-                if (success_count + fail_count) % 5 == 0:
-                    bot.send_message(user_id, f"تم: {success_count + fail_count}/{len(members)}")
+                if (i + 1) % 5 == 0:
+                    bot.send_message(user_id, f"تم معالجة {i + 1}/{len(members)} عضو: {success_count} نجاح, {fail_count} فشل")
+                
+                # تأجيل بين كل عملية لإظهار السلاسة
+                await asyncio.sleep(random.uniform(2, 5))
                 
             except Exception as e:
                 print(f"Error transferring member {member.id}: {e}")
@@ -228,17 +253,19 @@ async def transfer_members(user_id, source_group, target_group):
         save_transfer_record(user_id, source_group, target_group, len(members), success_count, "مكتمل")
         
         # إرسال النتيجة النهائية
-        bot.send_message(user_id, f"تم بنجاح: {success_count}\nفشل: {fail_count}")
+        bot.send_message(user_id, f"اكتملت عملية النقل:\nالنجاح: {success_count}\nالفشل: {fail_count}")
         
     except Exception as e:
-        bot.send_message(user_id, f"خطأ: {e}")
-        save_transfer_record(user_id, source_group, target_group, len(members) if 'members' in locals() else 0, success_count if 'success_count' in locals() else 0, f"فشل: {e}")
+        bot.send_message(user_id, f"حدث خطأ أثناء عملية النقل: {e}")
+        save_transfer_record(user_id, source_group, target_group, len(members) if 'members' in locals() else 0, 
+                            success_count if 'success_count' in locals() else 0, f"فشل: {e}")
     finally:
         await client.disconnect()
+        show_main_menu(user_id)
 
-@bot.message_handler(func=lambda message: message.text.startswith("حالة"))
-def show_transfer_status(message):
-    user_id = message.from_user.id
+@bot.callback_query_handler(func=lambda call: call.data == "status")
+def show_transfer_status(call):
+    user_id = call.from_user.id
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -247,14 +274,15 @@ def show_transfer_status(message):
     conn.close()
     
     if not transfers:
-        bot.send_message(message.chat.id, "لا توجد عمليات سابقة.")
+        bot.send_message(user_id, "لا توجد عمليات نقل سابقة.")
         return
     
-    status_text = "آخر العمليات:\n\n"
+    status_text = "آخر 5 عمليات نقل:\n\n"
     for transfer in transfers:
         status_text += f"من: {transfer[0]}\nإلى: {transfer[1]}\nالمحاولة: {transfer[2]}\nالنجاح: {transfer[3]}\nالحالة: {transfer[4]}\nالتاريخ: {transfer[5]}\n\n"
     
-    bot.send_message(message.chat.id, status_text)
+    bot.send_message(user_id, status_text)
+    show_main_menu(user_id)
 
 # معالجة رموز التحقق
 @bot.message_handler(func=lambda message: True)
@@ -264,19 +292,30 @@ def handle_messages(message):
     
     # إذا كان المستخدم في مرحلة إدخال الرمز
     if user_id in user_sessions and user_sessions[user_id].get('step') == 'code':
-        asyncio.run(verify_code(user_id, text))
+        threading.Thread(target=run_async_verify, args=(user_id, text)).start()
+
+def run_async_verify(user_id, code):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(verify_code(user_id, code))
+    loop.close()
 
 async def verify_code(user_id, code):
+    if user_id not in user_sessions:
+        bot.send_message(user_id, "لم يتم العثور على جلسة التسجيل. يرجى البدء من جديد.")
+        return
+    
     session_info = user_sessions[user_id]
     client = session_info['client']
     phone = session_info['phone']
     
     try:
         await client.sign_in(phone, code)
-        bot.send_message(user_id, "تم التسجيل!")
+        bot.send_message(user_id, "تم تسجيل الدخول بنجاح!")
         user_sessions[user_id]['step'] = 'completed'
+        show_main_menu(user_id)
     except Exception as e:
-        bot.send_message(user_id, f"فشل: {e}")
+        bot.send_message(user_id, f"فشل تسجيل الدخول: {e}")
 
 # التأكد من وجود مجلد الجلسات
 if not os.path.exists('sessions'):
