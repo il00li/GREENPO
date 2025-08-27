@@ -9,13 +9,14 @@ import os
 import random
 import threading
 import re
+import base64
 
 # إعدادات Telethon
 API_ID = 23656977
-API_HASH = '49d3f43531a92b3f5bc403766313ca1e'
+API_HASH = '8300609210:AAGHCu5Un2UDMEnxy4Oh-QCY1_kVDm3S6Ro'
 
 # إعدادات بوت التلجرام
-BOT_TOKEN = '8300609210:AAGHCu5Un2UDMEnxy4Oh-QCY1_kVDm3S6Ro'
+BOT_TOKEN = '7545979856:AAH4YXddSwBWwgvjQPxY8tGarBgptMhy0p0'
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # رموز تعبيرية عشوائية
@@ -84,21 +85,52 @@ def save_transfer_record(user_id, source_group, target_group, members_count, suc
     conn.commit()
     conn.close()
 
-# وظائف التحقق من صحة سلسلة الجلسة
+# وظائف معالجة سلسلة الجلسة
+def extract_session_from_text(text):
+    """استخراج سلسلة الجلسة من النص الذي قد يحتوي على روابط أو تنسيقات أخرى"""
+    # إزالة علامات التنسيق والروابط
+    text = re.sub(r'[`<>]', '', text)
+    
+    # البحث عن نمط سلسلة الجلسة (عادة تحتوي على أحرف وأرقام وعلامات = في النهاية)
+    session_pattern = r'([A-Za-z0-9+/=]{100,})'
+    matches = re.findall(session_pattern, text)
+    
+    if matches:
+        # إرجاع أطول مقطع (من المحتمل أن يكون سلسلة الجلسة)
+        return max(matches, key=len)
+    
+    return None
+
 def is_valid_session_string(session_string):
-    # تحقق من أن السلسلة تحتوي على بنية أساسية للجلسة
+    """التحقق من صحة سلسلة الجلسة"""
     if not session_string or not isinstance(session_string, str):
         return False
     
-    # تحقق من الطول الأساسي للجلسة (عادة تكون طويلة)
+    # يجب أن تكون سلسلة الجلسة طويلة بما يكفي
     if len(session_string) < 100:
         return False
     
-    # تحقق من وجود أحرف وأرقم وعلامات مناسبة
+    # يجب أن تحتوي على أحرف وأرقام وعلامات مناسبة
     if not re.match(r'^[A-Za-z0-9+/=]+$', session_string):
         return False
     
+    # يجب أن تنتهي بعلامة = أو تحتوي على عدد مناسب منها
+    if session_string.count('=') < 1:
+        return False
+    
     return True
+
+def fix_session_string(session_string):
+    """محاولة إصلاح سلسلة الجلسة إذا كانت تالفة"""
+    # إزالة أي مسافات أو أسطر جديدة
+    session_string = session_string.replace(' ', '').replace('\n', '')
+    
+    # إضافة علامات = إذا كانت ناقصة (لجعل الطول من مضاعفات 4)
+    remainder = len(session_string) % 4
+    if remainder != 0:
+        session_string += '=' * (4 - remainder)
+    
+    return session_string
 
 # وظائف Telethon
 async def get_group_members(client, group_username):
@@ -129,7 +161,13 @@ async def add_member_to_group(client, user, target_group):
 def show_main_menu(chat_id):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(f"إدخال رمز الجلسة {random.choice(EMOJIS)}", callback_data="input_session"))
-    markup.add(InlineKeyboardButton(f"نقل الأعضاء {random.choice(EMOJIS)}", callback_data="transfer"))
+    
+    # التحقق إذا كان لدى المستخدم جلسة مسجلة
+    session_string = get_user_session(chat_id)
+    if session_string:
+        markup.add(InlineKeyboardButton(f"نقل الأعضاء {random.choice(EMOJIS)}", callback_data="transfer"))
+        markup.add(InlineKeyboardButton(f"اختبار الجلسة {random.choice(EMOJIS)}", callback_data="test_session"))
+    
     markup.add(InlineKeyboardButton(f"حالة النقل {random.choice(EMOJIS)}", callback_data="status"))
     markup.add(InlineKeyboardButton(f"حذف الجلسة {random.choice(EMOJIS)}", callback_data="delete_session"))
     
@@ -155,19 +193,29 @@ def request_session_string(call):
 4. أرسل لي السلسلة التي تحصل عليها
 
 📝 **مثال لرمز الجلسة:**
-`1a2b3c4d5e6f...` (سلسلة طويلة من الأحرف والأرقام)
+`1a2b3c4d5e6f...` (سلسلة طويلة من الأحرف والأرقام والعلامات =)
 
 ⚠️ **تحذير:** لا تشارك رمز الجلسة مع أي شخص لأنه يمثل حسابك.
+
+💡 **ملاحظة:** يمكنك نسخ الرمز كاملاً وإرساله لي.
 """
     msg = bot.send_message(user_id, instructions, parse_mode="Markdown")
     bot.register_next_step_handler(msg, process_session_string)
 
 def process_session_string(message):
     user_id = message.from_user.id
-    session_string = message.text.strip()
+    input_text = message.text.strip()
     
-    # تنظيف السلسلة من أي علامات أو روابط
-    session_string = re.sub(r'[`<>]', '', session_string)
+    # استخراج سلسلة الجلسة من النص المدخل
+    session_string = extract_session_from_text(input_text)
+    
+    if not session_string:
+        bot.send_message(user_id, "❌ لم أتمكن من العثور على رمز جلسة صالح في النص الذي أرسلته.\n\nيرجى إرسال رمز الجلسة فقط دون أي إضافات.")
+        show_main_menu(user_id)
+        return
+    
+    # محاولة إصلاح سلسلة الجلسة إذا كانت تالفة
+    session_string = fix_session_string(session_string)
     
     # التحقق من صحة سلسلة الجلسة
     if not is_valid_session_string(session_string):
@@ -196,15 +244,33 @@ async def test_session_async(user_id, session_string):
         
         if await client.is_user_authorized():
             me = await client.get_me()
-            bot.send_message(user_id, f"✅ تم الاتصال بنجاح! \n\nمرحباً: {me.first_name} \n\nاسم المستخدم: @{me.username}")
+            bot.send_message(user_id, f"✅ تم الاتصال بنجاح! \n\nمرحباً: {me.first_name} \n\nاسم المستخدم: @{me.username if me.username else 'غير متوفر'}")
         else:
             bot.send_message(user_id, "❌ الجلسة غير صالحة. يرجى إدخال رمز جلسة صحيح.")
         
         await client.disconnect()
     except Exception as e:
-        bot.send_message(user_id, f"❌ فشل اختبار الاتصال: {str(e)}")
+        error_msg = f"❌ فشل اختبار الاتصال: {str(e)}"
+        if "Not a valid string" in str(e):
+            error_msg += "\n\n⚠️ رمز الجلسة غير صالح. يرجى إدخال رمز جلسة جديد من @StringSessionBot."
+        bot.send_message(user_id, error_msg)
     
     show_main_menu(user_id)
+
+@bot.callback_query_handler(func=lambda call: call.data == "test_session")
+def test_session(call):
+    user_id = call.from_user.id
+    
+    # التحقق من وجود جلسة للمستخدم
+    session_string = get_user_session(user_id)
+    if not session_string:
+        bot.send_message(user_id, "❌ لم تقم بإدخال رمز الجلسة بعد. يرجى إدخاله أولاً.")
+        show_main_menu(user_id)
+        return
+    
+    # اختبار الجلسة
+    bot.send_message(user_id, "🔍 جاري اختبار الجلسة...")
+    threading.Thread(target=test_session_connection, args=(user_id, session_string)).start()
 
 @bot.callback_query_handler(func=lambda call: call.data == "delete_session")
 def delete_session(call):
@@ -233,12 +299,44 @@ def request_source_group(call):
         show_main_menu(user_id)
         return
     
-    # إلغاء أي عملية نقل نشطة سابقة
-    if user_id in active_transfers:
-        del active_transfers[user_id]
+    # اختبار الجلسة أولاً
+    bot.send_message(user_id, "🔍 جاري التحقق من صحة الجلسة قبل البدء...")
+    threading.Thread(target=test_and_start_transfer, args=(user_id,)).start()
+
+def test_and_start_transfer(user_id):
+    session_string = get_user_session(user_id)
     
-    msg = bot.send_message(user_id, "أرسل معرف المجموعة المصدر (مثل: @group_username):")
-    bot.register_next_step_handler(msg, process_source_group)
+    # اختبار الجلسة أولاً
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    success = loop.run_until_complete(test_session_only(user_id, session_string))
+    loop.close()
+    
+    if success:
+        # إذا كانت الجلسة صالحة، انتقل إلى طلب المجموعة المصدر
+        msg = bot.send_message(user_id, "✅ الجلسة صالحة. أرسل معرف المجموعة المصدر (مثل: @group_username):")
+        bot.register_next_step_handler(msg, process_source_group)
+    else:
+        show_main_menu(user_id)
+
+async def test_session_only(user_id, session_string):
+    try:
+        client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+        await client.connect()
+        
+        if await client.is_user_authorized():
+            await client.disconnect()
+            return True
+        else:
+            bot.send_message(user_id, "❌ الجلسة غير صالحة. يرجى إدخال رمز جلسة صحيح.")
+            await client.disconnect()
+            return False
+    except Exception as e:
+        error_msg = f"❌ فشل اختبار الجلسة: {str(e)}"
+        if "Not a valid string" in str(e):
+            error_msg += "\n\n⚠️ رمز الجلسة غير صالح. يرجى إدخال رمز جلسة جديد من @StringSessionBot."
+        bot.send_message(user_id, error_msg)
+        return False
 
 def process_source_group(message):
     user_id = message.from_user.id
@@ -344,7 +442,6 @@ async def transfer_members(user_id, source_group, target_group):
         # التحقق من أن العميل يمكنه إضافة أعضاء إلى المجموعة الهدف
         try:
             target_entity = await client.get_entity(target_group)
-            # تحقق من أن الحساب لديه صلاحية إضافة أعضاء
             bot.send_message(user_id, "✅ تم التحقق من الصلاحيات. جاري بدء النقل...")
         except Exception as e:
             bot.send_message(user_id, f"❌ لا يمكن الوصول إلى المجموعة الهدف: {str(e)}")
@@ -395,7 +492,7 @@ async def transfer_members(user_id, source_group, target_group):
     except Exception as e:
         error_msg = f"❌ حدث خطأ أثناء عملية النقل: {str(e)}"
         if "Not a valid string" in str(e):
-            error_msg += "\n\n⚠️ رمز الجلسة غير صالح. يرجى إدخال رمز جلسة جديد."
+            error_msg += "\n\n⚠️ رمز الجلسة غير صالح. يرجى إدخال رمز جلسة جديد من @StringSessionBot."
         bot.send_message(user_id, error_msg)
         save_transfer_record(user_id, source_group, target_group, len(members) if 'members' in locals() else 0, 
                             success_count if 'success_count' in locals() else 0, f"فشل: {e}")
@@ -434,4 +531,4 @@ def handle_other_messages(message):
 # تشغيل البوت
 if __name__ == "__main__":
     print("Bot is running...")
-    bot.infinity_polling() 
+    bot.infinity_polling()
