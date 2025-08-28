@@ -17,7 +17,7 @@ API_HASH = "49d3f43531a92b3f5bc403766313ca1e"
 BOT_TOKEN = "8300609210:AAGHCu5Un2UDMEnxy4Oh-QCY1_kVDm3S6Ro"
 
 # إعدادات المدير
-ADMIN_ID = 1234567890  # ضع رقمك هنا
+ADMIN_ID = 6689435577  # ضع رقمك هنا
 
 # تهيئة العميل
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
