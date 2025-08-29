@@ -2,10 +2,12 @@ import os
 import telebot
 import asyncio
 import time
+import re
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError, FloodWaitError
-from telethon.tl.functions.channels import InviteToChannelRequest
-from telethon.tl.types import InputPeerUser
+from telethon.errors import SessionPasswordNeededError, FloodWaitError, ChannelInvalidError, ChannelPrivateError
+from telethon.tl.functions.channels import InviteToChannelRequest, GetParticipantsRequest
+from telethon.tl.types import InputPeerUser, ChannelParticipantsSearch
+from telethon.tl.functions.channels import GetFullChannelRequest
 
 # بيانات API
 API_ID = 23656977
@@ -58,6 +60,11 @@ def handle_callback(call):
         bot.send_message(call.message.chat.id, 'يرجى إرسال رقم هاتفك مع رمز الدولة (مثال: +1234567890)')
     
     elif call.data == 'start_pull':
+        # التحقق من وجود جلسة مسجلة مسبقاً
+        if not os.path.exists(f'sessions/{user_id}.session'):
+            bot.send_message(call.message.chat.id, 'يجب تسجيل الدخول أولاً!')
+            return
+            
         pull_sessions[user_id] = {'step': 'ask_member_count'}
         bot.send_message(call.message.chat.id, 'كم عدد الأعضاء الذين تريد سحبهم؟')
     
@@ -73,11 +80,13 @@ def handle_callback(call):
 def show_settings_menu(chat_id):
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(
+        telebot.types.InlineKeyboardButton("تغيير التأخير بين الإضافات", callback_data='change_delay'),
+        telebot.types.InlineKeyboardButton("عرض الإحصائيات", callback_data='show_stats'),
         telebot.types.InlineKeyboardButton("العودة", callback_data='back_to_main')
     )
     bot.send_message(chat_id, "قائمة الإعدادات:", reply_markup=markup)
 
-# معالج الرسائل النصية
+# معالجة الرسائل النصية
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     user_id = message.from_user.id
@@ -100,7 +109,11 @@ def handle_login_process(message):
     text = message.text
     
     if user_sessions[user_id]['step'] == 'request_phone':
-        # طلب رقم الهاتف
+        # التحقق من صحة رقم الهاتف
+        if not re.match(r'^\+\d{10,15}$', text):
+            bot.send_message(message.chat.id, 'رقم الهاتف غير صحيح. يرجى إدخال رقم هاتف صحيح مع رمز الدولة (مثال: +1234567890)')
+            return
+            
         phone = text
         user_sessions[user_id]['phone'] = phone
         user_sessions[user_id]['step'] = 'request_code'
@@ -128,6 +141,10 @@ def handle_login_process(message):
     elif user_sessions[user_id]['step'] == 'request_code':
         # معالجة رمز التحقق
         code = text.strip()
+        if not code.isdigit():
+            bot.send_message(message.chat.id, 'رمز التحقق يجب أن يكون أرقاماً فقط. يرجى إدخاله مرة أخرى:')
+            return
+            
         client = user_sessions[user_id]['client']
         phone_code_hash = user_sessions[user_id]['phone_code_hash']
         phone = user_sessions[user_id]['phone']
@@ -151,6 +168,8 @@ def handle_login_process(message):
             # مسح بيانات الجلسة المؤقتة
             del user_sessions[user_id]
             
+            show_main_menu(message.chat.id)
+            
         except SessionPasswordNeededError:
             # إذا كانت هناك حاجة إلى كلمة مرور ثنائية
             user_sessions[user_id]['step'] = 'request_2fa'
@@ -158,7 +177,10 @@ def handle_login_process(message):
         
         except Exception as e:
             bot.send_message(message.chat.id, f'حدث خطأ أثناء التحقق: {str(e)}')
-            loop.run_until_complete(client.disconnect())
+            try:
+                loop.run_until_complete(client.disconnect())
+            except:
+                pass
             del user_sessions[user_id]
         finally:
             loop.close()
@@ -177,9 +199,15 @@ def handle_login_process(message):
             bot.send_message(message.chat.id, 'تم تسجيل الدخول بنجاح!')
             loop.run_until_complete(client.disconnect())
             del user_sessions[user_id]
+            
+            show_main_menu(message.chat.id)
+            
         except Exception as e:
             bot.send_message(message.chat.id, f'حدث خطأ في كلمة المرور: {str(e)}')
-            loop.run_until_complete(client.disconnect())
+            try:
+                loop.run_until_complete(client.disconnect())
+            except:
+                pass
             del user_sessions[user_id]
         finally:
             loop.close()
@@ -229,17 +257,78 @@ def start_pulling(user_id, chat_id):
             bot.send_message(chat_id, 'يجب تسجيل الدخول أولاً.')
             return
         
-        # الحصول على معلومات المصدر والهدف
-        source_entity = loop.run_until_complete(client.get_entity(pull_sessions[user_id]['source']))
-        target_entity = loop.run_until_complete(client.get_entity(pull_sessions[user_id]['target']))
+        # الحصول على معلومات المصدر
+        try:
+            source_entity = loop.run_until_complete(client.get_entity(pull_sessions[user_id]['source']))
+        except (ValueError, ChannelInvalidError, ChannelPrivateError):
+            bot.send_message(chat_id, 'المصرف غير صالح أو لا يمكن الوصول إليه.')
+            loop.run_until_complete(client.disconnect())
+            del pull_sessions[user_id]
+            return
+        
+        # الحصول على معلومات الهدف
+        try:
+            target_entity = loop.run_until_complete(client.get_entity(pull_sessions[user_id]['target']))
+        except (ValueError, ChannelInvalidError, ChannelPrivateError):
+            bot.send_message(chat_id, 'الهدف غير صالح أو لا يمكن الوصول إليه.')
+            loop.run_until_complete(client.disconnect())
+            del pull_sessions[user_id]
+            return
+        
+        # التحقق من صلاحية إضافة أعضاء إلى الهدف
+        try:
+            target_full = loop.run_until_complete(client(GetFullChannelRequest(target_entity)))
+            if not target_full.chats[0].creator and not target_full.chats[0].admin_rights:
+                bot.send_message(chat_id, 'ليس لديك صلاحية إضافة أعضاء إلى الهدف.')
+                loop.run_until_complete(client.disconnect())
+                del pull_sessions[user_id]
+                return
+        except:
+            bot.send_message(chat_id, 'لا يمكن التحقق من صلاحيات الهدف.')
+            loop.run_until_complete(client.disconnect())
+            del pull_sessions[user_id]
+            return
         
         # الحصول على أعضاء المصدر
-        members = loop.run_until_complete(client.get_participants(source_entity))
+        try:
+            members = []
+            offset = 0
+            limit = 200
+            
+            while len(members) < pull_sessions[user_id]['member_count']:
+                participants = loop.run_until_complete(client(GetParticipantsRequest(
+                    source_entity,
+                    ChannelParticipantsSearch(''),
+                    offset,
+                    limit,
+                    hash=0
+                )))
+                
+                if not participants.users:
+                    break
+                    
+                members.extend(participants.users)
+                offset += len(participants.users)
+                
+                if len(participants.users) < limit:
+                    break
+                    
+        except Exception as e:
+            bot.send_message(chat_id, f'حدث خطأ أثناء جلب الأعضاء: {str(e)}')
+            loop.run_until_complete(client.disconnect())
+            del pull_sessions[user_id]
+            return
+        
+        if not members:
+            bot.send_message(chat_id, 'لا يوجد أعضاء في المصدر أو لا يمكن الوصول إليهم.')
+            loop.run_until_complete(client.disconnect())
+            del pull_sessions[user_id]
+            return
         
         # تحديد عدد الأعضاء المطلوب سحبهم
         member_count = min(pull_sessions[user_id]['member_count'], len(members))
         
-        bot.send_message(chat_id, f'جاري سحب {member_count} عضو...')
+        bot.send_message(chat_id, f'تم العثور على {len(members)} عضو. جاري سحب {member_count} عضو...')
         
         # سحب الأعضاء
         success_count = 0
@@ -247,17 +336,23 @@ def start_pulling(user_id, chat_id):
         
         for i, member in enumerate(members[:member_count]):
             try:
+                # تخطي البوتات
+                if member.bot:
+                    fail_count += 1
+                    continue
+                
                 # إضافة العضو إلى الهدف مع تأخير 20 ثانية
                 if i > 0:
                     time.sleep(20)
                 
                 loop.run_until_complete(client(InviteToChannelRequest(
                     target_entity,
-                    [member.input_user]
+                    [member]
                 )))
                 
                 success_count += 1
-                bot.send_message(chat_id, f'تم إضافة العضو: {member.first_name} ({success_count}/{member_count})')
+                if success_count % 10 == 0:  # إرسال تحديث كل 10 أعضاء
+                    bot.send_message(chat_id, f'تم إضافة {success_count} عضو من أصل {member_count}')
                 
             except FloodWaitError as e:
                 # إذا كان هناك حظر، ننتظر المدة المطلوبة
@@ -269,11 +364,12 @@ def start_pulling(user_id, chat_id):
                 try:
                     loop.run_until_complete(client(InviteToChannelRequest(
                         target_entity,
-                        [member.input_user]
+                        [member]
                     )))
                     
                     success_count += 1
-                    bot.send_message(chat_id, f'تم إضافة العضو: {member.first_name} ({success_count}/{member_count})')
+                    if success_count % 10 == 0:
+                        bot.send_message(chat_id, f'تم إضافة {success_count} عضو من أصل {member_count}')
                     
                 except Exception as e:
                     fail_count += 1
@@ -281,7 +377,9 @@ def start_pulling(user_id, chat_id):
                 
             except Exception as e:
                 fail_count += 1
-                bot.send_message(chat_id, f'فشل إضافة العضو: {member.first_name} - الخطأ: {str(e)}')
+                # لا نرسل رسالة لكل خطأ لتجنب Flood
+                if fail_count % 5 == 0:
+                    bot.send_message(chat_id, f'فشل إضافة {fail_count} أعضاء حتى الآن')
         
         # إرسال تقرير النتائج
         bot.send_message(chat_id, f'تمت العملية بنجاح!\nالنجاح: {success_count}\nالفشل: {fail_count}')
