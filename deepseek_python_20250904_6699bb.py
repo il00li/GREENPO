@@ -20,10 +20,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '7966976239:AAFjCFXvxixZqnfBrfqftj0iXmcX67WI7lY'
+TOKEN = '8300609210:AAENBlzLuiMv_N7WY3XAp-9Ux1p2fr4vTpA'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 8419586314  # معرف المدير
-WEBHOOK_URL = 'https://boto7-0c3p.onrender.com/webhook'  # تأكد من تطابق هذا مع عنوان URL الخاص بك
+WEBHOOK_URL = 'https://greenpo.onrender.com/webhook'  # تأكد من تطابق هذا مع عنوان URL الخاص بك
 
 app = Flask(__name__)
 bot = telebot.TeleBot(TOKEN)
