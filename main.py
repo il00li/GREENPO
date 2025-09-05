@@ -27,9 +27,9 @@ BOT_TOKEN = "8300609210:AAENBlzLuiMv_N7WY3XAp-9Ux1p2fr4vTpA"
 ADMIN_ID = 6689435577
 CHANNEL_USERNAME = "iIl337"  # بدون @
 GITHUB_TOKEN = "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"
-GITHUB_REPO = "telegram-bot-deploy"
+GITHUB_REPO = "https://github.com/il00li/Python-telegram-bot"
 RENDER_TOKEN = "rnd_giDks7sFiBMBA74sOAV4E2xD01TX"
-RENDER_SERVICE_ID = "telegram-bot-service"
+RENDER_SERVICE_ID = "srv-d2tf57vfte5s73a6d3l0"
 GEMINI_API_KEY = "AIzaSyD3w0ZtC-GOvOVVlUxb_l0ayRAVsar64FI"
 
 # حالة البوت
