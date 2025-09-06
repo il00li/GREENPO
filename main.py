@@ -13,7 +13,7 @@ from telebot.types import (
 )
 
 # إعدادات البوت
-BOT_TOKEN = '8300609210:AAH_0-UPJQtF6UKz2Ajy014AbmbvGsgB2Ng'
+BOT_TOKEN = '8300609210:AAHyu_OBjN5MaRnRUd2XEz8h4BjUJO75mS8'
 ADMIN_ID = 6689435577  # معرف المدير
 DEVELOPER_USERNAME = '@OlIiIl7'  # معرف المطور
 CHANNEL_LINK = 'https://t.me/iIl337'  # قناة البوت
