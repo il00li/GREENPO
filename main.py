@@ -10,7 +10,7 @@ from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # إعدادات البوت
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8215456582:AAHFB0z4Gx3ANHgVNOOm1XgvBPMmlQHEO6A')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8268382565:AAE53lW1JjJU8tMxWVWIFcrM_YS9AGKAqSo')
 ADMIN_ID = 6689435577
 BOT_USERNAME = '@HOZ7_BOT'
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyD3w0ZtC-GOvOVVlUxb_l0ayRAVsar64FI')
