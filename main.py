@@ -12,7 +12,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 
 # إعدادات البوت
-BOT_TOKEN = '8268382565:AAFKvkqNDy7Ch_dWLFFZzaPD9t-_2Icw5Rs'
+BOT_TOKEN = '8038261927:AAEHman1gkBeQlfjfoNI27DfzjLW2AIK_yo'
 ADMIN_ID = 6689435577
 BOT_USERNAME = '@HOZ7_BOT'
 CHANNEL_ID = '-1003091756917'  # معرف القناة
@@ -725,5 +725,6 @@ def run_bot():
 if __name__ == '__main__':
 
     run_bot()
+
 
 
