@@ -517,7 +517,7 @@ def run_bot():
         # إعداد Webhook
         bot.remove_webhook()
         time.sleep(1)
-        webhook_url = f"https://your-render-app.onrender.com/webhook"
+        webhook_url = f"https://greenpo.onrender.com/webhook"
         bot.set_webhook(url=webhook_url)
         logging.info(f"Webhook set to: {webhook_url}")
         
