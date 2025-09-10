@@ -1478,4 +1478,5 @@ def run_bot():
         bot.polling(none_stop=True)
 
 if __name__ == '__main__':
+
     run_bot()
