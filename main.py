@@ -16,9 +16,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 # إعدادات البوت
-BOT_TOKEN = '8268382565:AAEARaX_luiZ2qEBMaUpSX2Jfz4r0os7J0A'
+BOT_TOKEN = '8302179730:AAFc-zqXG3TPRVoZpFiD_oXSGQFkFw6rBHg'
 ADMIN_ID = 6689435577
-BOT_USERNAME = '@HOZ7_BOT'
+BOT_USERNAME = '@HUS67_BOT'
 CHANNEL_ID = '-1003091756917'  # قناة الملفات
 USER_DATA_CHANNEL_ID = '3088700358'  # قناة بيانات المستخدمين
 WEBHOOK_URL = 'https://greenpo-1.onrender.com'
