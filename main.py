@@ -13,9 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 # إعدادات البوت
-BOT_TOKEN = '8302179730:AAFc-zqXG3TPRVoZpFiD_oXSGQFkFw6rBHg'
+BOT_TOKEN = '8323080366:AAEjDLf52u7y1HL8YTXfr70PlCAYj6PktV4'
 ADMIN_ID = 6689435577
-BOT_USERNAME = '@HUS67_BOT'
+BOT_USERNAME = '@HEES7_BOT'
 CHANNEL_ID = '-1003091756917'  # قناة الملفات
 USER_DATA_CHANNEL_ID = '-1003088700358'  # قناة بيانات المستخدمين
 
