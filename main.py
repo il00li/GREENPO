@@ -21,7 +21,7 @@ ADMIN_ID = 6689435577
 BOT_USERNAME = '@HUS67_BOT'
 CHANNEL_ID = '-1003091756917'  # قناة الملفات
 USER_DATA_CHANNEL_ID = '3088700358'  # قناة بيانات المستخدمين
-WEBHOOK_URL = 'https://greenpo-1.onrender.com'
+WEBHOOK_URL = 'https://greenpo.onrender.com'
 
 # الحصول على المنفذ من متغيرات البيئة (مطلوب للتشغيل على Render)
 port = int(os.environ.get('PORT', 5000))
